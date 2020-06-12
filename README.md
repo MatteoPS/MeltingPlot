@@ -1,11 +1,13 @@
 # MeltingPlot
-### A tool for strains clustering/typing and epidemiological investigation using High Resolution Melting (HRM) temperatures.
+### R script for strains clustering/typing and epidemiological investigation using High Resolution Melting (HRM) temperatures.
 
-The online version is available at https://skynet.unimi.it/index.php/tools/meltingplot/
+Whit MeltingPlot is possible to type pathogens and perform epidemiological investigations using High Resolution Melting (HRM) data. A graph-base algorithm was designed to discriminate pathogen clones starting from HRM temperaturs.
 
-The manual is avaialble at https://skynet.unimi.it/wp-content/uploads/MeltingPlot/MeltingPlot_Manual.pdf
+MeltingPlot can also merge HRM data with isolates and patients metadata to create graphical and tabular outputs useful in epidemiological studies. 
 
-The tool take as input an spreadsheed to fill with HRM tempreature an metadata.
+Read the manual https://skynet.unimi.it/wp-content/uploads/MeltingPlot/MeltingPlot_Manual.pdf to know better how to use it an to see some example of outputs
+
+MelingPlot has also an online version available at https://skynet.unimi.it/index.php/tools/meltingplot/
 
 The template spreadsheet is available at https://skynet.unimi.it/wp-content/uploads/MeltingPlot/MeltingPlot_Template.xls.
 
