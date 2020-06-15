@@ -6,6 +6,9 @@ Citing MeltingPlot:
 If you are using MeltingPlot for a scientific publication, please cite:
 
 Perini, M. et al. MeltingPlot: a user-friendly online tool for epidemiological investigation using High Resolution Melting data, 2020
+
+
+
 On-line MeltingPlot
 
 
