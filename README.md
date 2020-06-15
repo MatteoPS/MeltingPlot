@@ -9,9 +9,6 @@ Perini, M. et al. MeltingPlot: a user-friendly online tool for epidemiological i
 
 
 
-On-line MeltingPlot
-
-
 Download the full USER MANUAL:
 https://skynet.unimi.it/wp-content/uploads/MeltingPlot/MeltingPlot_Manual.pdf
 
