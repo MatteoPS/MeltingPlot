@@ -25,7 +25,7 @@ print("  -ref             (required) ['y' or 'n'] presence of reference temperat
 print("                                                                                                ")
 print("Optional arguments:                                                                             ")
 print("  -rep             repilicates of HRM expriment, default = 3                                    ")
-print("  -png_res         PPI value resolution for the .png images, 0 = no png, default = 0, max=150   ")
+print("  -png_res         PPI value resolution for the .png images, 0 = no png, default = 0            ")
 print("  -day_thr         minimum value to have bolder links in patients graph, default = 7            ")
 print("  -btw_thr         Betweenness value treshold for undetermined isolates, default = 0.5          ")
 print("  -h,--h,--help    show help page                                                               ")
