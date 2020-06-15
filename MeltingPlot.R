@@ -88,7 +88,7 @@ for (arg_name in arguments)
 print("                                                                                                ")
 print("            ERROR                                                                               ")
 print("                                                                                                ")
-print(paste(arg_name, "is a mandatory argument and it's missing"))  ######################put in the log
+print(paste(arg_name, "is a mandatory argument and it's missing")) 
 print("                                                                                                ")
 print("The mandatory arguments are:")
 print(mandatory)
