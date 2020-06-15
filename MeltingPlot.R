@@ -30,7 +30,10 @@ print("  -day_thr         minimum value to have bolder links in patients graph, 
 print("  -btw_thr         Betweenness value treshold for undetermined isolates, default = 0.5          ")
 print("  -h,--h,--help    show help page                                                               ")
 print("                                                                                                ")
-print("Plese cite *Perini et al 2020* when using Meltiplot for a publication, THANK YOU                ")
+print("If you are using MeltingPlot for a scientific publication please cite:                          ")
+print("Perini, M. et al. MeltingPlot: a user-friendly online tool for epidemiological  investigation   ")
+print(" 		  using High Resolution Melting data, 2020                                     ")
+print("  * THANK YOU *                                                                                 ")
 print("                                                                                                ")
 quit()
 }
