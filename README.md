@@ -1,6 +1,8 @@
 # MeltingPlot
 ### R script for strains clustering/typing and epidemiological investigation using High Resolution Melting (HRM) temperatures.
 
+![MelingPlot](https://skynet.unimi.it/wp-content/uploads/MeltingPlot/logo.png "MeltingPLot")
+
 
 Download the full USER MANUAL:
 https://skynet.unimi.it/wp-content/uploads/MeltingPlot/MeltingPlot_Manual.pdf
