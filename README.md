@@ -1,7 +1,7 @@
 # MeltingPlot
 ### R script for strains clustering/typing and epidemiological investigation using High Resolution Melting (HRM) temperatures.
 
-Whit MeltingPlot is possible to type pathogens and perform epidemiological investigations using High Resolution Melting (HRM) data. A graph-base algorithm was designed to discriminate pathogen clones starting from HRM temperaturs.
+With MeltingPlot is possible to type pathogens and perform epidemiological investigations using High Resolution Melting (HRM) data. A graph-base algorithm was designed to discriminate pathogen clones starting from HRM temperaturs.
 
 MeltingPlot can also merge HRM data with isolates and patients metadata to create graphical and tabular outputs useful in epidemiological studies. 
 
