@@ -2,6 +2,15 @@
 
 #Rscript MeltingPlot.R -in [inputfile] -meta ['y' or 'n'] -ref ['y' or 'n']
 
+# Developed by Matteo Perini 2020
+# SkyNet UNIMI
+# Pediatric Clinical Research Center
+# Romeo ed Enrica Invernizzi
+# Universita degli Studi di Milano 
+# matteo.perini@unimi.it
+# Please cite our work:
+# Perini, M. et al. MeltingPlot: a user-friendly online tool for epidemiological investigation using High Resolution Melting data, 2020
+
 args = commandArgs(trailingOnly=TRUE)
 
 	
