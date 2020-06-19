@@ -22,5 +22,6 @@ Rscript MeltingPlot.R -in MeltingPlot_Example.xls -meta y -ref y
 
 If you are using MeltingPlot for a scientific publication, please cite:
 
-Perini, M. et al. MeltingPlot: a user-friendly online tool for epidemiological investigation using High Resolution Melting data, 2020
+Perini, M. et al. MeltingPlot: a user-friendly online tool for epidemiological investigation using High Resolution Melting data medRxiv 2020; doi: https://doi.org/10.1101/2020.06.16.20132142
+
 
