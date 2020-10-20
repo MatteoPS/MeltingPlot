@@ -59,7 +59,7 @@ quit()
 ##################   LIBRARY LOADER  #########################
 ##############################################################
 
-if (!require("pacman")) install.packages("pacman")
+if (!require("pacman")) install.packages("pacman", dep=T)
 pacman::p_load(igraph,gplots,xlsx,ggplot2,scales)
 
 
