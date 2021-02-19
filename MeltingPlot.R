@@ -10,10 +10,9 @@
 # matteo.perini@unimi.it
 
 # Please cite our work:
-# Perini, M. et al. "MeltingPlot: a user-friendly online tool for epidemiological 
-# investigation using High Resolution Melting data" medRxiv 2020;
-# doi: https://doi.org/10.1101/2020.06.16.20132142
-
+# Perini, M. et al. "MeltingPlot, a user-friendly online tool for epidemiological 
+# investigation using High Resolution Melting data" BMC Bioinformatics 22, 76 (2021). 
+# doi: https://doi.org/10.1186/s12859-021-04020-y
 
 args = commandArgs(trailingOnly=TRUE)
 
