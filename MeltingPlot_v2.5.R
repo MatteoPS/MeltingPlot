@@ -1,8 +1,10 @@
 #!/usr/bin/env Rscript
 
-#Rscript MeltingPlot.R -in [inputfile] -meta ['y' or 'n'] -ref ['y' or 'n']
+###########	VERSION v2.5	#################
 
-# Developed by Matteo Perini 2020
+#Rscript MeltingPlot_v2.5.R -in [inputfile] -meta ['y' or 'n'] -ref ['y' or 'n']
+
+# Developed by Matteo Perini and Francesco Comandatore 2020-2021
 # SkyNet UNIMI
 # Pediatric Clinical Research Center
 # Romeo ed Enrica Invernizzi
@@ -40,6 +42,7 @@ print("  -rep             repilicates of HRM expriment, default = 3             
 print("  -png_res         PPI value resolution for the .png images, 0 = no png, default = 0            ")
 print("  -day_thr         minimum value to have bolder links in patients graph, default = 7            ")
 print("  -btw_thr         Betweenness value treshold for undetermined isolates, default = 0.5          ")
+print("  -clus_thr        max temp difference to cluster 2 isolate toghether, default = 0.3            ")
 print("  -h,--h,--help    show help page                                                               ")
 print("                                                                                                ")
 print("If you are using MeltingPlot for a scientific publication please cite:                          ")
@@ -52,30 +55,24 @@ print("                                                                         
 quit()
 }
 
-
-
-
 ##############################################################
 ##################   LIBRARY LOADER  #########################
 ##############################################################
 
-if (!require("pacman")) install.packages("pacman", dep=T)
+if (!require("pacman")) install.packages("pacman")
 pacman::p_load(igraph,gplots,xlsx,ggplot2,scales)
-
-
 
 ##############################################################
 ##################   GET INPUTS  #############################
 ##############################################################
 
 #available arguments
-arguments = c("-in","-rep","-meta","-ref", "-png_res", "-day_thr", "-btw_thr")
+arguments = c("-in","-rep","-meta","-ref", "-png_res", "-day_thr", "-btw_thr","-clus_thr")
 
 mandatory = c("-in", "-ref", "-meta")
 
 #if not in mandatory, it MUST have a default.
-defaults = c("none",3,"none","none", 0, 7, 0.5)
-
+defaults = c("none",3,"none","none", 0, 7, 0.5,0.3)
 
 args_df <- data.frame(matrix(ncol = length(arguments), nrow = 0))
 default_args_df <- data.frame(matrix(ncol = length(arguments), nrow = 0))
@@ -126,9 +123,10 @@ with_background <- args_df[1,"-ref"]
 png_resolution = as.numeric(args_df[1,"-png_res"])
 day_thr = as.numeric(args_df[1,"-day_thr"])
 btw_thr = as.numeric(args_df[1,"-btw_thr"])
+clus_thr = as.numeric(args_df[1,"-clus_thr"])
 
-
-
+print(args_df)
+print(clus_thr)
 ##############################################################
 ##################   FUNCTIONS  ##############################
 ##############################################################
@@ -153,13 +151,17 @@ add_legend <- function(...)
 values_palette<-colorRampPalette(c("royalblue3","gray92","firebrick1"))(100)
 
 # palette clusters
-clusters_palette = c("#e6c800","#3cb44b","#e6194B","#4363d8","#f58231","#911eb4","#42d4f4","#f032e6","#bfef45","#fabebe","#469990","#e6beff","#9A6324","#fffac8","#800000","#aaffc3","#808000","#ffd8b1")
+clusters_palette = c("#3cb44b","#e6194B","#4363d8","#f58231","#911eb4","#42d4f4","#f032e6","#e6c800","#bfef45","#fabebe","#469990","#e6beff","#9A6324","#fffac8","#800000","#aaffc3","#808000","#ffd8b1", rep("black", 1000))
 
 col_nohrm = "gray10"
 col_und = "gray50"
 
 # palette locations
-loc_palette = adjustcolor(c("#A6CEE3","#FDBF6F","#B2DF8A","#FB9A99","#CAB2D6","#FFFF99","#1F78B4","#33A02C","#E31A1C","#FF7F00","#6A3D9A","#B15928"),alpha.f = .7)
+loc_palette = adjustcolor(c("#A6CEE3","#FDBF6F","#B2DF8A","#FB9A99","#CAB2D6","#FFFF99","#1F78B4","#33A02C","#E31A1C","#FF7F00","#6A3D9A","#B15928","#000066","#CC0099", rep("gray40", 1000)),alpha.f = .7)
+
+
+####takes all colors from 
+color = grDevices::colors()[grep('gr(a|e)y', grDevices::colors(), invert = T)]
 
 ### Strings
 
@@ -171,10 +173,6 @@ nohrm_string <- "NoHRM"
 #edge betwenness threshold
 eb_thr <- 1
 
-# Clustering CELSISUS threshold, max temp difference to cluster 2 isolate toghether (as established in https://doi.org/10.1038/s41598-020-57742-z)
-clus_thr <- 0.5
-
-
 # minimum of days span to plot the month plots
 plot_month_thr = 45
 
@@ -185,6 +183,7 @@ clus_graph_label_color = "black"
 
 # trasmission graph
 tra_graph_label_color = "black"
+tra_graph_vertex_size = 8
 
 # Timeline symbols
 positivized_size = 5
@@ -209,9 +208,9 @@ dir.create(output_folder_pdf, showWarnings = FALSE)
 dir.create(output_folder_tab, showWarnings = FALSE)
 
 out_table_xls <- paste(output_folder_tab,"/",input_file_name,"_isolates.xls", sep="")
-out_table_clus_xls <- paste(output_folder_tab,"/",input_file_name,"_clusters.xls", sep="")
 
 
+out_graph_table_xls <- paste(output_folder_tab,"/",input_file_name,"_patients_graph_table.xls", sep="")
 
 #1.1. Isolates clustering: isolates graph
 out_isolate_graph_pdf <- paste(output_folder_pdf,"/1a_",input_file_name,"_MeltingPlot_isolates_graph.pdf", sep="")
@@ -245,6 +244,15 @@ out_positivization_global_day_png <- paste(output_folder_png,"/2e_",input_file_n
 out_positivization_global_month_pdf <- paste(output_folder_pdf,"/2f_",input_file_name,"_MeltingPlot_positivization_global_monthly.pdf", sep="")
 out_positivization_global_month_png <- paste(output_folder_png,"/2f_",input_file_name,"_MeltingPlot_positivization_global_monthly.png", sep="")
 
+#2.7. Prevalence analysis:  Isolates by clusters (daily)
+out_isolates_clusters_day_pdf <- paste(output_folder_pdf,"/2g_",input_file_name,"_MeltingPlot_isolates_clusters_daily.pdf", sep="")
+out_isolates_clusters_day_png <- paste(output_folder_png,"/2g_",input_file_name,"_MeltingPlot_isolates_clusters_daily.png", sep="")
+
+#2.7. Prevalence analysis:  Isolates by clusters (monthly)
+out_isolates_clusters_month_pdf <- paste(output_folder_pdf,"/2h_",input_file_name,"_MeltingPlot_isolates_clusters_monthly.pdf", sep="")
+out_isolates_clusters_month_png <- paste(output_folder_png,"/2h_",input_file_name,"_MeltingPlot_isolates_clusters_monthly.png", sep="")
+
+
 #3.1. Transmission analysis: patients' timeline
 out_patients_timeline_pdf <- paste(output_folder_pdf,"/3a_",input_file_name,"_MeltingPlot_patients_timeline.pdf", sep="")
 out_patients_timeline_png <- paste(output_folder_png,"/3a_",input_file_name,"_MeltingPlot_patients_timeline.png", sep="")
@@ -253,8 +261,9 @@ out_patients_timeline_png <- paste(output_folder_png,"/3a_",input_file_name,"_Me
 out_patients_graph_pdf <- paste(output_folder_pdf,"/3b_",input_file_name,"_MeltingPlot_patients_graph.pdf", sep="")
 out_patients_graph_png <- paste(output_folder_png,"/3b_",input_file_name,"_MeltingPlot_patients_graph.png", sep="")
 
-
-
+#3.3. Transmission analysis: patient−to−patient graph, only those closely sampled (< day_thr)
+out_sel_patients_graph_pdf <- paste(output_folder_pdf,"/3c_",input_file_name,"_MeltingPlot_","less_than_", day_thr,"days_patients_graph.pdf", sep="")
+out_sel_patients_graph_png <- paste(output_folder_pdf,"/3c_",input_file_name,"_MeltingPlot_","less_than_", day_thr,"days_patients_graph.png", sep="")
 
 ##############################################################
 ##################   LOGFILE  ################################
@@ -402,15 +411,10 @@ if (length(temp_excl_wrong_set) > 0)
 
 temp_in3 <- temp_in2[!temp_in2$ID_isolate %in% temp_excl_wrong_set,]
 
-
-
-
 # d) all the isolates must have a row for each primer set
-
-
 	
-	isolates_names = unique(temp_in$ID_isolate)
-	primers_names = unique(temp_in$Primers_set)
+	isolates_names = as.character(unique(temp_in$ID_isolate))
+	primers_names = as.character(unique(temp_in$Primers_set))
 	
 	primer_miss_ids = c()
 	for (iso_name in isolates_names)
@@ -442,10 +446,11 @@ write(txt, file=log_file, append=T)
 
 #############
 ### METADATA
+
 if (with_metadata == "y")
 {
 	txt <- paste("\r\n\r\n2. Check metadata input ...\r\n", sep="")
-	write(txt,file = log_file, append=T)
+	write(txt, file = log_file, append=T)
 
 	# Check duplicated isolates
 	
@@ -473,6 +478,7 @@ if (with_metadata == "y")
 
 	metadata_excluded_isolates <- metadata_in2[metadata_NA_count + metadata_empty_count > 0, "ID_isolate"]
 
+	
 	if (length(metadata_excluded_isolates) > 0)
 	{
 		txt <- paste("\r\nThe following isolates will be not included in the barplot and timeline plots because of empty cells in the input table:\r\n", sep="")
@@ -497,14 +503,11 @@ if (with_metadata == "y")
 
 
 	metadata_in4 <- metadata_in3[! metadata_in3$ID_isolate %in%  metadata_excluded_dates,]
-
 	txt <- paste("\r\nDONE!\r\n" , sep="")
 	write(txt, file=log_file, append=T)
 
 
 }
-
-
 
 #############
 ### Reference
@@ -572,26 +575,11 @@ if (with_background == "y")
 
 	bkg4 <- bkg3[!bkg3$ID_isolate %in% bkg_excl_wrong_set,]
 
-	##check annotation field < 15 characters	
-	
-	bkg_long_annotation=bkg[nchar(as.matrix(bkg$Annotation))>15,"ID_isolate"]
-	
-	if (length(bkg_long_annotation) > 0)
-	{
-	txt <- paste("\r\nThe following reference isolates will be exluded because their annotation is longher than 15 characters:\r\n" , sep="")
-	write(txt, file=log_file, append=T)
-	write(as.matrix(bkg_long_annotation), file=log_file, ncol=1, append=T)
-	}
-		
-	bkg <- bkg4[!bkg3$ID_isolate %in% bkg_long_annotation,]
-
-
 	#### all the isolates must have a temps for each primer set
 
-	
 	isolates_ref_names = unique(bkg$ID_isolate)
 	primers_ref_names = unique(bkg$Primers_set)
-	
+
 	primer_miss_ref_ids = c()
 	for (iso_name in isolates_ref_names)
 	{
@@ -631,7 +619,8 @@ write(txt, file=log_file, append=T)
 
 
 ####################
-### FIXED TABLES
+### FIXED TABLES####
+####################
 
 hrm_temp_table <- temp_in3
 hrm_temp_table <- droplevels(hrm_temp_table)
@@ -651,9 +640,9 @@ if (with_background == "y")
 	row.names(bkg_table_unique) <- bkg_table_unique$ID_isolate
 }
 
-####################
-### DISTANCE MATRIX
-
+########################
+### DISTANCE MATRIX ####
+########################
 # Compute the average temperature matrix
 
 temp2mean <- hrm_temp_table[,3:temp_ncol]
@@ -665,29 +654,17 @@ Mean_T <- rowMeans(temp2mean)
 
 hrm_temp_table_with_mean <- cbind(hrm_temp_table, Mean_T)
 
-if (with_background == "y")
-{
-	bkg_temp2mean <- bkg_temp_table[,4:bkg_ncol]
-	bkg_temp2mean=data.frame(sapply(bkg_temp2mean, function(x) as.numeric(as.character(x))))
-	bkg_Mean_T <- rowMeans(bkg_temp2mean)
-	bkg_temp_table_with_mean <- cbind(bkg_temp_table, bkg_Mean_T)
-	bkg_temp_table_with_mean$Annotation <- NULL
+########################
+# MERGE NODES e change the commands used to generate temp_mat
 
-	colnames(bkg_temp_table_with_mean)[colnames(bkg_temp_table_with_mean) == "bkg_Mean_T"] <- "Mean_T"
-
-	hrm_temp_table_with_mean <- rbind(hrm_temp_table_with_mean, bkg_temp_table_with_mean)
-
-}
-
-
-# Create empty matrix
+# The strains with exactly the same Tms for all the primers will be merged before the clustering analysis
 
 temp_mat_col <- unique(hrm_temp_table_with_mean$Primers_set)
 temp_mat_row <- unique(hrm_temp_table_with_mean$ID_isolate)
 
-temp_mat <- matrix(nrow = length(temp_mat_row), ncol = length(temp_mat_col))
-row.names(temp_mat) <- temp_mat_row
-colnames(temp_mat) <- temp_mat_col
+hrm_temp_table_with_mean_dcast <- matrix(nrow = length(temp_mat_row), ncol = length(temp_mat_col))
+row.names(hrm_temp_table_with_mean_dcast) <- temp_mat_row
+colnames(hrm_temp_table_with_mean_dcast) <- temp_mat_col
 
 # Fill in the matrix
 
@@ -697,27 +674,88 @@ for (i in 1:nrow(hrm_temp_table_with_mean))
         set <- hrm_temp_table_with_mean[i,"Primers_set"]
         mean <- hrm_temp_table_with_mean[i,"Mean_T"]
 
-        temp_mat[as.character(as.matrix(org)), as.character(as.matrix(set))] <- mean
+        hrm_temp_table_with_mean_dcast[as.character(as.matrix(org)), as.character(as.matrix(set))] <- mean
+}
+
+# assign each node to a group of identical nodes
+
+# collapse the temperatures
+
+if (ncol( hrm_temp_table_with_mean_dcast) != 1)
+	{
+	hrm_temp_table_with_mean_dcast_collapsed <- as.matrix(apply( hrm_temp_table_with_mean_dcast[ , colnames(hrm_temp_table_with_mean_dcast) ] , 1 , paste , collapse = "-" ))
+	}else{
+	hrm_temp_table_with_mean_dcast_collapsed = hrm_temp_table_with_mean_dcast
+	}
+# assign the node
+Strain_node_number = paste("Node",as.numeric(as.factor(hrm_temp_table_with_mean_dcast_collapsed[,1])),sep="_")
+
+hrm_temp_table_with_mean_dcast_nodes = cbind.data.frame(hrm_temp_table_with_mean_dcast, Strain_node_number)
+hrm_temp_table_with_mean_dcast_nodes = cbind.data.frame(row.names(hrm_temp_table_with_mean_dcast_nodes), hrm_temp_table_with_mean_dcast_nodes)
+colnames(hrm_temp_table_with_mean_dcast_nodes)[1] = "ID_isolate"
+
+# Generation of temp_mat for study strains
+temp_mat_study <- hrm_temp_table_with_mean_dcast_nodes[!duplicated(hrm_temp_table_with_mean_dcast_nodes$Strain_node_number),]
+row.names(temp_mat_study) <- temp_mat_study$Strain_node_number
+temp_mat_study$Strain_node_number <- NULL
+temp_mat_study$ID_isolate <- NULL
+
+
+if (with_background == "y")
+{
+	bkg_temp2mean <- bkg_temp_table[,4:bkg_ncol]
+	bkg_temp2mean=data.frame(sapply(bkg_temp2mean, function(x) as.numeric(as.character(x))))
+	bkg_Mean_T <- rowMeans(bkg_temp2mean)
+	bkg_temp_table_with_mean <- cbind(bkg_temp_table, bkg_Mean_T)
+	bkg_temp_table_with_mean$Melting_Type <- NULL
+
+	colnames(bkg_temp_table_with_mean)[colnames(bkg_temp_table_with_mean) == "bkg_Mean_T"] <- "Mean_T"
+
+	bkg_mat_col <- unique(bkg_temp_table_with_mean$Primers_set)
+	bkg_mat_row <- unique(bkg_temp_table_with_mean$ID_isolate)
+
+	bkg_temp_table_with_mean_dcast <- matrix(nrow = length(bkg_mat_row), ncol = length(bkg_mat_col))
+	row.names(bkg_temp_table_with_mean_dcast) <- bkg_mat_row
+	colnames(bkg_temp_table_with_mean_dcast) <- bkg_mat_col
+
+	# Fill in the matrix
+
+	for (i in 1:nrow(bkg_temp_table_with_mean))
+	{
+        	org <- bkg_temp_table_with_mean[i,"ID_isolate"]
+        	set <- bkg_temp_table_with_mean[i,"Primers_set"]
+        	mean <- bkg_temp_table_with_mean[i,"Mean_T"]
+
+        	bkg_temp_table_with_mean_dcast[as.character(as.matrix(org)), as.character(as.matrix(set))] <- mean
+	}
+		
+	temp_mat_bkg <- bkg_temp_table_with_mean_dcast
+
+	temp_mat <- rbind(temp_mat_study, temp_mat_bkg)
+
+}else
+{
+	temp_mat <- temp_mat_study
 }
 
 # Make distance matrix
 
-m_dist <- matrix(nrow = length(temp_mat_row), ncol= length(temp_mat_row))
-row.names(m_dist) <- temp_mat_row
-colnames(m_dist) <- temp_mat_row
+m_dist <- matrix(nrow = nrow(temp_mat), ncol= nrow(temp_mat))
+row.names(m_dist) <- row.names(temp_mat)
+colnames(m_dist) <- row.names(temp_mat)
 
-for (i in 1:(length(temp_mat_row)-1))
+for (i in 1:(nrow(temp_mat)-1))
 {
-	for (u in (i+1):length(temp_mat_row))
+	for (u in (i+1):nrow(temp_mat))
 	{
-
 		org1 <- as.matrix(row.names(m_dist)[i])
 		org2 <- as.matrix(row.names(m_dist)[u])
 
-		org_tab <- temp_mat[c(org1,org2),]
+		org_tab <- subset(temp_mat, rownames(temp_mat) %in% c(org1,org2))
 
 		diff_tab <- apply(org_tab, 2, function(x) abs(diff(x)))
 		diff <- sum(diff_tab > clus_thr)
+		#diff <- sum(diff_tab >= clus_thr)
 
 		m_dist[as.matrix(org1),as.matrix(org2)] <- diff
 		m_dist[as.matrix(org2),as.matrix(org1)] <- diff
@@ -732,39 +770,47 @@ for (i in 1:(length(temp_mat_row)-1))
 
 # Convert the matrix to binary
 
-m_dist_zero <- ifelse(m_dist == 0, 1, 0)
+m_dist_zero <- (m_dist == 0)*1
 
-# create the graph
+hrm_graph_initial_with_bkg <- simplify(graph_from_adjacency_matrix(m_dist_zero, mode="undirected"))
 
-hrm_graph_initial <- simplify(graph_from_adjacency_matrix(m_dist_zero, mode="undirected"))
+hrm_graph_initial_with_bkg_tab <- as_edgelist(hrm_graph_initial_with_bkg, names = TRUE)
 
-# Remove links with betweeness over a threshold
+# make the subgraph without the background strains
 
-eb <- edge_betweenness(hrm_graph_initial)
+hrm_graph_initial <- induced.subgraph(graph=hrm_graph_initial_with_bkg, vids=row.names(temp_mat_study))
 
 
-
-#edge betweennes normalization:
-if (min(eb) != max(eb))
+# if the network has zero links (all strain have the same temperature) it won't evalte the edge betwennes
+num_edge_hrm_graph_initial = length(E(hrm_graph_initial))
+if (num_edge_hrm_graph_initial == 0)
+{hrm_graph <- hrm_graph_initial}else
 {
-	eb_norm= (eb-min(eb))/(max(eb)-min(eb))
-}else
-{
-	eb_norm=eb
+	# Remove links with betweeness over a threshold
+
+	eb <- edge_betweenness(hrm_graph_initial)
+
+	#edge betweennes normalization:
+
+	if (min(eb) != max(eb))
+	{
+		eb_norm= (eb-min(eb))/(max(eb)-min(eb))
+	}else
+	{
+		eb_norm=eb
+	}
+
+
+	edges_rm <- E(hrm_graph_initial)[eb_norm > eb_thr]
+
+	if (length(edges_rm) > 0)
+	{
+	hrm_graph <- delete_edges(hrm_graph_initial, edges_rm)
+	}else{
+	hrm_graph <- hrm_graph_initial
+	}
+
 }
-
-
-
-
-edges_rm <- E(hrm_graph_initial)[eb_norm > eb_thr]
-
-if (length(edges_rm) > 0)
-{
-hrm_graph <- delete_edges(hrm_graph_initial, edges_rm)
-}else{
-hrm_graph <- hrm_graph_initial
-}
-
 
 ####################################
 # BETWEEENESS PER CLUSTER
@@ -793,6 +839,7 @@ for (i in 1:length(hrm_graph_dec))
 		cls$membership = 1
 		btw <- c(0)
 	}
+
 	tmp <- cbind.data.frame(V(hrm_graph_dec[[i]])$name, btw, cls$membership+max_clus)
 	colnames(tmp) <- colnames(btw_tab)
 
@@ -803,10 +850,9 @@ for (i in 1:length(hrm_graph_dec))
 
 row.names(btw_tab) <- btw_tab[,1]
 btw_tab[,1] <- NULL
+
 #sometimes the normalization of betweenness gives NaN insted of 0, so it substitute them
 btw_tab$Betweenness[is.na(btw_tab$Betweenness)] <- 0
-
-
 
 # giving names to clusters
 merge_clus_tab<-btw_tab
@@ -819,33 +865,69 @@ for (strain in rownames(btw_tab))
 
 }
 
-
-
-# undetermined table
-und_tab <- merge_clus_tab[merge_clus_tab[,"Betweenness"] > btw_thr, ]
+# undetermined table (FOR STUDY STRAIN ONLY)
+merge_clus_tab_study <- merge_clus_tab[row.names(merge_clus_tab) %in% row.names(temp_mat_study), ]
+und_tab <- merge_clus_tab_study[merge_clus_tab_study[,"Betweenness"] > btw_thr, ]
 
 if (nrow(und_tab) > 0)
 {
 	und_clusters=und_tab$Betweenness_clusters
-	merge_clus_tab[merge_clus_tab[,"Betweenness"] > btw_thr, "Betweenness_clusters"] <- und_string
+	merge_clus_tab[merge_clus_tab[,"Betweenness"] > btw_thr & row.names(merge_clus_tab) %in% row.names(temp_mat_study), "Betweenness_clusters"] <- und_string
 }
 
-#### Change names to clusters on the basis of background
+# Each strain is annotated with the Melting_Type of the background strains connect with it in the graph
 
 if (with_background == "y")
 {
-	bkg_table_unique_clus <- merge(bkg_table_unique, merge_clus_tab, by.x="ID_isolate", by.y="row.names", all.x=T)
-	bkg_clus_uniq <- unique(bkg_table_unique_clus[,c("Annotation","Betweenness_clusters")])
-	bkg_clus_uniq_aggr <- aggregate(Annotation ~ Betweenness_clusters, bkg_clus_uniq, paste, collapse = "#-#")
-	bkg_clus_uniq_aggr <- bkg_clus_uniq_aggr[bkg_clus_uniq_aggr$Betweenness_clusters != und_string,]
-	row.names(bkg_clus_uniq_aggr) <- bkg_clus_uniq_aggr$Betweenness_clusters
-	bkg_clus_uniq_aggr$Annotation <- paste("#C#", bkg_clus_uniq_aggr$Annotation,sep="")
+
+	# replace the bkg ID_isolate with bkg Melting_Type
+
+	hrm_graph_initial_with_bkg_tab <- apply(hrm_graph_initial_with_bkg_tab, 2, function(x) ifelse(as.matrix(x) %in% as.matrix(bkg_table_unique$ID_isolate), as.matrix(bkg_table_unique[as.matrix(x),"Melting_Type"]), as.matrix(x)))
+
+	Melting_Type = c()
+
+	for (node in rownames(temp_mat_study))
+	{
+
+		hrm_graph_initial_with_bkg_tab_node = subset(hrm_graph_initial_with_bkg_tab, hrm_graph_initial_with_bkg_tab[,1] == node | hrm_graph_initial_with_bkg_tab[,2] == node)
 
 
-	merge_clus_tab$Betweenness_clusters <- ifelse(merge_clus_tab$Betweenness_clusters %in% bkg_clus_uniq_aggr$Betweenness_clusters, bkg_clus_uniq_aggr[as.matrix(merge_clus_tab$Betweenness_clusters), "Annotation"], merge_clus_tab$Betweenness_clusters)
+		node_Melting_Type = paste(unique(hrm_graph_initial_with_bkg_tab_node[!hrm_graph_initial_with_bkg_tab_node %in% row.names(temp_mat_study)]), collapse="---")
+
+		Melting_Type = c(Melting_Type, node_Melting_Type)
+
+	}
+
+
+	Melting_Type <- as.matrix(Melting_Type)
+	row.names(Melting_Type) <-row.names(temp_mat_study)
+	colnames(Melting_Type)[1] <- "Melting_Type" 
+	Melting_Type[Melting_Type[,1] == ""] <- "Untyped"
+	
+}
+
+if (with_background == "y")
+{
+
+bkg_temp_table_with_mean_dcast_nodes = cbind.data.frame(row.names(bkg_temp_table_with_mean_dcast), bkg_temp_table_with_mean_dcast, 		row.names(bkg_temp_table_with_mean_dcast))
+colnames(bkg_temp_table_with_mean_dcast_nodes)[1] = "ID_isolate"
+colnames(bkg_temp_table_with_mean_dcast_nodes)[ncol(bkg_temp_table_with_mean_dcast_nodes)] = "Strain_node_number"
+all_temp_table_with_mean_dcast_nodes =rbind(bkg_temp_table_with_mean_dcast_nodes, hrm_temp_table_with_mean_dcast_nodes)
+
+}else{
+
+all_temp_table_with_mean_dcast_nodes = hrm_temp_table_with_mean_dcast_nodes
 
 }
 
+merge_clus_tab2 <- merge(merge_clus_tab, all_temp_table_with_mean_dcast_nodes, by.x = "row.names", by.y="Strain_node_number", all=T)
+colnames(merge_clus_tab2)[colnames(merge_clus_tab2) == "Row.names"] <- "Strain_node_number"
+row.names(merge_clus_tab2) <- merge_clus_tab2$ID_isolate
+
+if (with_background == "y")
+{
+merge_clus_tab2 <- merge(merge_clus_tab2, Melting_Type, by.x="Strain_node_number", by.y="row.names", all=T)
+}
 
 # getting cluster list
 
@@ -896,14 +978,9 @@ out_isolate_graph_height = length(rownames(temp_mat))/2
 clus_graph_hrm_legend_size = out_isolate_graph_width / 10
 clus_graph_title_size = clus_graph_hrm_legend_size * 1.3
 
-if (with_background == "y")
-{
-	V(hrm_graph)$label.cex = ifelse(V(hrm_graph)$name %in% bkg_table_unique$ID_isolate, 0.0001, clus_graph_title_size*0.75)
-}else
-{
 	V(hrm_graph)$label.cex = clus_graph_title_size*0.75
+	V(hrm_graph)$label.cex = clus_graph_title_size*0.50
 
-}
 V(hrm_graph)$color <- adjustcolor(color_tab_ord_graph, alpha.f = .4)
 V(hrm_graph)$label.color = clus_graph_label_color
 
@@ -912,15 +989,18 @@ V(hrm_graph)$label.color = clus_graph_label_color
 clus_graph_weight = (347/14100)-(1/85500)*length(E(hrm_graph))
 E(hrm_graph)$weight <- rep(clus_graph_weight, length(E(hrm_graph)))
 
+# without links it doesn't calculate eb_norm, see above the variable  num_edge_hrm_graph_initial
+
+if (num_edge_hrm_graph_initial == 0)
+{edge_width = 1}else
+{
 edge_width=(1-eb_norm)*(max(vertex_size)/1.5)
+}
 
 lay <- layout.auto(hrm_graph)
 subtitle = paste("smaller nodes = uncertain clustering, thinner link = uncertain connection")
 
-
 #the size of the pdf and of the png depends on the number of strains
-
-
 #min PDF sizes
 if (out_isolate_graph_width < 8)
 {
@@ -929,14 +1009,12 @@ out_isolate_graph_height = 8
 
 }
 
-
-
 pdf(out_isolate_graph_pdf, out_isolate_graph_width, out_isolate_graph_height)
 par(mar = c(0.5, 0.5, clus_graph_title_size*2, clus_graph_hrm_legend_size*10))
 plot(hrm_graph, layout = lay, vertex.frame.color =  color_tab_ord_graph,vertex.size=vertex_size, edge.width = edge_width)
 mtext(subtitle,adj=0, cex=clus_graph_title_size*0.75)
 title(main = list("1a) HRM-based clustering/typing: isolates graph", cex = clus_graph_title_size),adj=0)
-add_legend("right", legend=cluster_color$cluster_text, pch=19, col=as.character(cluster_color[,1]),pt.cex=(1+clus_graph_hrm_legend_size), cex=clus_graph_hrm_legend_size, ncol = 1, bty="n", title = "HRM_Cluster")
+add_legend("right", legend=cluster_color$cluster_text, pch=19, col=as.character(cluster_color[,1]),pt.cex=(1+clus_graph_hrm_legend_size), cex=clus_graph_hrm_legend_size, ncol = 1, bty="n", title = "Melting_Cluster")
 dev.off()
 if (png_resolution>0)
 {
@@ -945,7 +1023,7 @@ par(mar = c(0.5, 0.5, clus_graph_title_size*2, clus_graph_hrm_legend_size*10))
 plot(hrm_graph, layout = lay, vertex.frame.color =  color_tab_ord_graph,vertex.size=vertex_size, edge.width = edge_width)
 mtext(subtitle,adj=0, cex=clus_graph_title_size*0.75)
 title(main = list("1a) HRM-based clustering/typing: isolates graph", cex = clus_graph_title_size),adj=0)
-add_legend("right", legend=cluster_color$cluster_text, pch=19, col=as.character(cluster_color[,1]),pt.cex=(1+clus_graph_hrm_legend_size), cex=clus_graph_hrm_legend_size, ncol = 1, bty="n", title = "HRM_Cluster")
+add_legend("right", legend=cluster_color$cluster_text, pch=19, col=as.character(cluster_color[,1]),pt.cex=(1+clus_graph_hrm_legend_size), cex=clus_graph_hrm_legend_size, ncol = 1, bty="n", title = "Melting_Cluster")
 dev.off()
 }
 
@@ -959,16 +1037,35 @@ write(txt, file=log_file, append=T)
 txt <- paste("\r\n*plotting 1b) Isolates heatmap*\r\n" , sep="")
 write(txt, file=log_file, append=T)
 
+#merge all the information for study strains and background strains, to obtain temp_mat_2 for the heatmap (previusly temp_mat was used, but now it contains the merged nodes)
 
+merge_clus_tab2_ord<- merge_clus_tab2[order(merge_clus_tab2$Betweenness_clusters),]
+row.names(merge_clus_tab2_ord) <- merge_clus_tab2_ord$ID_isolate
+
+
+
+temp_mat_ord = subset(merge_clus_tab2_ord,merge_clus_tab2_ord$Strain_node_number %in% row.names(temp_mat_study), select=primers_names)
+#Remove background strains
+merge_clus_tab2_ord <- merge_clus_tab2_ord[merge_clus_tab2_ord$Strain_node_number %in% row.names(temp_mat_study),]
 
 # plot preparation
-clus_tab_ord <- merge_clus_tab[order(merge_clus_tab$Betweenness_clusters),"Betweenness_clusters",drop=F]
-
+clus_tab_ord <- merge_clus_tab2_ord[,"Betweenness_clusters",drop=F]
 clus_tab_ord_fact <- factor(clus_tab_ord[,"Betweenness_clusters"])
 
-# format values for heatmap
-temp_mat_ord <- temp_mat[as.matrix(row.names(clus_tab_ord)),]
-temp_mat_ord_format <- format(round(temp_mat_ord, 2), nsmall = 2)
+row.names(temp_mat_ord) <- ifelse(merge_clus_tab2_ord$Strain_node_number %in% row.names(temp_mat_study), paste(merge_clus_tab2_ord$ID_isolate," (",merge_clus_tab2_ord$Strain_node_number,")", sep=""), as.matrix(merge_clus_tab2_ord$ID_isolate))
+
+##duplicate columns with single primer set:
+if (ncol(temp_mat_ord)==1)
+{
+	temp_mat_ord_format <- format(round(temp_mat_ord, 2), nsmall = 2)
+	temp_mat_ord_format <- cbind(temp_mat_ord_format, as.matrix(rep("",nrow(temp_mat_ord_format))))
+	temp_mat_ord = cbind(temp_mat_ord, temp_mat_ord)
+	colnames(temp_mat_ord) <- c(colnames(temp_mat_ord)[1],"")
+
+}else{
+	temp_mat_ord_format <- format(round(temp_mat_ord, 2), nsmall = 2)
+	}
+
 
 # set plot parameters
 
@@ -1004,10 +1101,6 @@ if (dendro_height < 10)
 	dendro_text_factor = 0.9
 }
 
-
-
-
-
 if (with_background == "y")
 {
 	col_Row = ifelse(rownames(temp_mat_ord) %in% bkg_temp_table$ID_isolate, "grey40", "black")
@@ -1029,17 +1122,37 @@ pdf(out_isolate_heatmap_pdf, width= dendro_width , height = dendro_height)
 #external upper margin to fit title and subtitle
 par( oma=c(0,0,dendro_title_size*2,0))
 
-heatmap.2(as.matrix(temp_mat_ord), Rowv=FALSE, dendrogram = "none", trace = "none", srtCol=45, cexRow=dendro_cex_row, cexCol=dendro_cex_col, col=values_palette, RowSideColors=as.character(cluster_color[clus_tab_ord_fact,1]),key.xlab="°C",key.ylab="", denscol="black",density.info='density',key.title="",cellnote = temp_mat_ord_format, notecol="black", colRow = col_Row, notecex=dendro_cex_note, lhei=c(1,dendro_label_height),lwid=c(1,4), margins=c(lower_margin,right_margin))
+heatmap.2(
+	 as.matrix(temp_mat_ord),
+	 Rowv=FALSE, 
+	 dendrogram = "none", 
+	 trace = "none", 
+	 srtCol=45, 
+	 cexRow=dendro_cex_row, 
+	 cexCol=dendro_cex_col, 
+	 col=values_palette, 
+	 RowSideColors=as.character(cluster_color[clus_tab_ord_fact,1]),
+	 key.xlab="°C",
+	 key.ylab="", 
+	 denscol="black",
+	 density.info='density',
+	 key.title="",
+	 cellnote = temp_mat_ord_format, 
+	 notecol="black", 
+	 colRow = col_Row, 
+	 notecex=dendro_cex_note, 
+	 lhei=c(1,dendro_label_height),
+	 lwid=c(1,4), 
+	 margins=c(lower_margin,right_margin)
+	 )
 
-add_legend("right", legend=cluster_color$cluster_text, pch=15, col=as.character(cluster_color[,1]),pt.cex=(1+dendro_hrm_legend_size), cex=dendro_hrm_legend_size, ncol = 1, bty="n", title = "HRM_Cluster")
+add_legend("right", legend=cluster_color$cluster_text, pch=15, col=as.character(cluster_color[,1]),pt.cex=(1+dendro_hrm_legend_size), cex=dendro_hrm_legend_size, ncol = 1, bty="n", title = "Melting_Cluster")
 
 #new blank plot to add title and subtitle (new=T to overwite, mar=... to fit the texts, oma=.. avoid further blank space)
 par(new=T,mar = c(0.5, 0.5, dendro_title_size*2, dendro_hrm_legend_size*10),oma=c(0,0,0,0))
 plot(c(0, 1), c(0, 1), ann = F, bty = 'n', type = 'n', xaxt = 'n', yaxt = 'n')
 title(main = list("1b) HRM-based clustering/typing: isolates heatmap", cex = dendro_title_size),adj = 0)
 mtext(subtitle_dendro,adj=0,padj=0.1, cex=dendro_title_size*0.75)
-
-
 dev.off()
 
 
@@ -1051,7 +1164,7 @@ par( oma=c(0,0,dendro_title_size*2,0))
 
 heatmap.2(as.matrix(temp_mat_ord), Rowv=FALSE, dendrogram = "none", trace = "none", srtCol=45, cexRow=dendro_cex_row, cexCol=dendro_cex_col, col=values_palette, RowSideColors=as.character(cluster_color[clus_tab_ord_fact,1]),key.xlab="°C",key.ylab="", denscol="black",density.info='density',key.title="",cellnote = temp_mat_ord_format, notecol="black", colRow = col_Row, notecex=dendro_cex_note, lhei=c(1,dendro_label_height),lwid=c(1,4), margins=c(lower_margin,right_margin))
 
-add_legend("right", legend=cluster_color$cluster_text, pch=15, col=as.character(cluster_color[,1]),pt.cex=(1+dendro_hrm_legend_size), cex=dendro_hrm_legend_size, ncol = 1, bty="n", title = "HRM_Cluster")
+add_legend("right", legend=cluster_color$cluster_text, pch=15, col=as.character(cluster_color[,1]),pt.cex=(1+dendro_hrm_legend_size), cex=dendro_hrm_legend_size, ncol = 1, bty="n", title = "Melting_Cluster")
 
 #new blank plot to add title and subtitle (new=T to overwite, mar=... to fit the texts, oma=.. avoid further blank space)
 par(new=T,mar = c(0.5, 0.5, dendro_title_size*2, dendro_hrm_legend_size*10),oma=c(0,0,0,0))
@@ -1062,45 +1175,76 @@ mtext(subtitle_dendro,adj=0,padj=0.1, cex=dendro_title_size*0.75)
 
 
 #####################  cluster table  #################
-tab2file=data.frame("ID_isolate"=rownames(merge_clus_tab),"HRM_Cluster"=merge_clus_tab$Betweenness_clusters,"Betweenness"=merge_clus_tab$Betweenness, "color_hexa"=merge_clus_tab$color_hexa)
-tab2file$HRM_Cluster = gsub("#-#", " & ", tab2file$HRM_Cluster)
-tab2file$HRM_Cluster = gsub("#C#", "", tab2file$HRM_Cluster)
-
-write.xlsx(tab2file, file = out_table_clus_xls,row.names=F)
 
 txt <- paste("\r\nDONE\r\n" , sep="")
 write(txt, file=log_file, append=T)
 
+
+if (with_metadata == "n")
+{
+
+	#prints only the study strains
+
+	metadata_table_clus <- merge_clus_tab2[merge_clus_tab2$Strain_node_number %in% row.names(temp_mat_study),]
+
+	Melting_Cluster=metadata_table_clus$Betweenness_clusters
+	metadata_table_clus=cbind.data.frame(metadata_table_clus,Melting_Cluster)
+
+	#check for missing HRM temp
+	metadata_table_clus$Melting_Cluster <- ifelse(is.na(metadata_table_clus$Melting_Cluster), nohrm_string, as.matrix(metadata_table_clus$Melting_Cluster))
+
+	metadata_table_clus$color_hexa=cluster_color[metadata_table_clus$Melting_Cluster,"color_hexa"]
+
+	if (with_background == "y")
+	{
+		columns2write=c("ID_isolate","Melting_Cluster","Melting_Type","Betweenness", "color_hexa")
+	}else{
+		columns2write=c("ID_isolate","Melting_Cluster","Betweenness", "color_hexa")
+	}
+
+	metadata_table_clus_2write = metadata_table_clus[,columns2write]
+	metadata_table_clus_2write$Melting_Cluster = gsub("#-#", " & ", metadata_table_clus_2write$Melting_Cluster)	
+	metadata_table_clus_2write$Melting_Cluster = gsub("#C#", "", metadata_table_clus_2write$Melting_Cluster)
+	metadata_table_clus_2write <- merge(metadata_table_clus_2write, hrm_temp_table_with_mean_dcast_nodes, by="ID_isolate")
+
+	write.xlsx(metadata_table_clus_2write, file = out_table_xls, row.names=F)
+}
 
 ##############################################################
 ###################  when -meta n   ##########################
 ###################  IT STOPS HERE  ##########################
 ##############################################################
 
-
 if (with_metadata == "y")
 {
 	# merge clustering and metadata info
+	metadata_table_clus_tmp <- merge(metadata_table, merge_clus_tab2, by.x="ID_isolate", by.y="ID_isolate", all.x=T)
+	metadata_table_clus <- metadata_table_clus_tmp[metadata_table_clus_tmp$Strain_node_number %in% row.names(temp_mat_study),]
 
-	metadata_table_clus <- merge(metadata_table, merge_clus_tab, by.x="ID_isolate", by.y="row.names", all.x=T)
-	HRM_Cluster=metadata_table_clus$Betweenness_clusters
-	metadata_table_clus=cbind.data.frame(metadata_table_clus,HRM_Cluster)
+	Melting_Cluster=metadata_table_clus$Betweenness_clusters
+	metadata_table_clus=cbind.data.frame(metadata_table_clus,Melting_Cluster)
 
-	#check for no hrm temp
-	metadata_table_clus$HRM_Cluster <- ifelse(is.na(metadata_table_clus$HRM_Cluster), nohrm_string, as.matrix(metadata_table_clus$HRM_Cluster))
+	#check for missing HRM temp
+	metadata_table_clus$Melting_Cluster <- ifelse(is.na(metadata_table_clus$Melting_Cluster), nohrm_string, as.matrix(metadata_table_clus$Melting_Cluster))
 
-	metadata_table_clus$color_hexa=cluster_color[metadata_table_clus$HRM_Cluster,"color_hexa"]
+	metadata_table_clus$color_hexa=cluster_color[metadata_table_clus$Melting_Cluster,"color_hexa"]
 
-	columns2write=c("ID_isolate" ,"ID_patient","Date","Location","HRM_Cluster","Betweenness", "color_hexa")
+	if (with_background == "y")
+	{
+		columns2write=c("ID_isolate" ,"ID_patient","Date","Location","Melting_Cluster","Melting_Type","Betweenness", "color_hexa")
+	}else{
+		columns2write=c("ID_isolate" ,"ID_patient","Date","Location","Melting_Cluster","Betweenness", "color_hexa")
+	}
+
 	metadata_table_clus_2write = metadata_table_clus[,columns2write]
-	metadata_table_clus_2write$HRM_Cluster = gsub("#-#", " & ", metadata_table_clus_2write$HRM_Cluster)	
-	metadata_table_clus_2write$HRM_Cluster = gsub("#C#", "", metadata_table_clus_2write$HRM_Cluster)
+	metadata_table_clus_2write$Melting_Cluster = gsub("#-#", " & ", metadata_table_clus_2write$Melting_Cluster)	
+	metadata_table_clus_2write$Melting_Cluster = gsub("#C#", "", metadata_table_clus_2write$Melting_Cluster)
+	metadata_table_clus_2write <- merge(metadata_table_clus_2write, hrm_temp_table_with_mean_dcast_nodes, by="ID_isolate")
 
 	write.xlsx(metadata_table_clus_2write, file = out_table_xls, row.names=F)
 
 	# HRM Cluster colors
 
-	
 	txt <- paste("\r\n***Prevalence analysis starts***\r\n" , sep="")
 	write(txt, file=log_file, append=T)
 	##############################################################
@@ -1129,6 +1273,7 @@ if (with_metadata == "y")
 	count_barplot_size = num_location
 
 	#set palette and nemes for legends
+	
 	cluster_color$color_hexa<-as.character(cluster_color$color_hexa)
 	cluster_color$cluster_text<-as.character(cluster_color$cluster_text)
 	pal=setNames(cluster_color[,"color_hexa"],rownames(cluster_color))
@@ -1163,15 +1308,12 @@ if (with_metadata == "y")
 	}
 
 
-
-
-
-	barplot_day <- ggplot(metadata_table_clus_2barplot, aes(x=Date, y=count, fill=HRM_Cluster)) +
+	barplot_day <- ggplot(metadata_table_clus_2barplot, aes(x=Date, y=count, fill=Melting_Cluster)) +
 	geom_bar(stat="identity", width = 0.5) +
 	facet_wrap(~Location, nrow=num_location) +
 	scale_x_date(labels = date_format("%d-%m-%Y"), breaks = date_breaks("2 day"), minor_breaks= "day") +
 	scale_fill_manual(values=pal, labels=lab) +
-	theme(axis.text.x = element_text(angle = 45, hjust = 1, size = date_barplot_size_day), axis.text.y = element_text(size = count_barplot_size) , strip.background =element_rect(fill="gray90") , strip.text = element_text(colour = 'black')) +
+	theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1, size = date_barplot_size_day), axis.text.y = element_text(size = count_barplot_size) , strip.background =element_rect(fill="gray90") , strip.text = element_text(colour = 'black')) +
 	ggtitle("2a) Prevalence analysis: all isolates per location (daily)") +
 	scale_y_continuous(breaks=seq(0,max_num_date,by=1), minor_breaks= NULL)
 
@@ -1201,6 +1343,8 @@ if (with_metadata == "y")
 	}
 	txt <- paste("\r\nDONE\r\n" , sep="")
 	write(txt, file=log_file, append=T)
+	
+
 	##############################################################
 	##########  PLOT 2b) isolate location monthly  ###############
 	##############################################################
@@ -1230,7 +1374,15 @@ if (with_metadata == "y")
 	months_amount= ceiling(day_plot_width/30)
 	
 	
-	barplot_month <- ggplot(metadata_table_clus_2barplot, aes(x=month, y=count, fill=HRM_Cluster)) + geom_bar(stat="identity", width = 3) + facet_wrap(~Location, nrow=num_location) + scale_x_date(labels = date_format("%b-%Y"), breaks = date_breaks("month"), minor_breaks= NULL) + scale_fill_manual(values=pal, labels=lab) + theme(axis.text.x = element_text(angle = 45, hjust = 1, size = date_barplot_size_month), axis.text.y = element_text(size = count_barplot_size), strip.background =element_rect(fill="gray90"), strip.text = element_text(colour = 'black')) + ggtitle("2b) Prevalence analysis: all isolates per location (monthly)") + scale_y_continuous(breaks=seq(0,max_num_month,by=1), minor_breaks= NULL)
+	barplot_month <- ggplot(metadata_table_clus_2barplot, aes(x=month, y=count, fill=Melting_Cluster)) + 
+		geom_bar(stat="identity", width = 3) + facet_wrap(~Location, nrow=num_location) + 
+		scale_x_date(labels = date_format("%b-%Y"), breaks = date_breaks("month"), minor_breaks= NULL) + 
+		scale_fill_manual(values=pal, labels=lab) + 
+		theme_minimal() + 
+		theme(axis.text.x = element_text(angle = 45, hjust = 1, size = date_barplot_size_month), 
+			axis.text.y = element_text(size = count_barplot_size), strip.background =element_rect(fill="gray90"), 
+			strip.text = element_text(colour = 'black')) + ggtitle("2b) Prevalence analysis: all isolates per location (monthly)") + 
+		scale_y_continuous(breaks=seq(0,max_num_month,by=1), minor_breaks= NULL)
 
 	g <- ggplot_gtable(ggplot_build(barplot_month))
 	stript <- which(grepl('strip-t', g$layout$name))
@@ -1272,7 +1424,7 @@ if (with_metadata == "y")
 	metadata_table_clus_2barplot_ord <- metadata_table_clus_2barplot[order(metadata_table_clus_2barplot$Date),]
 
 	# get the first patient-cluster case (positivized moment)
-	metadata_table_clus_2barplot_ord_nodup <- metadata_table_clus_2barplot_ord[!duplicated(paste(metadata_table_clus_2barplot_ord$ID_patient, metadata_table_clus_2barplot_ord$HRM_Cluster)),]
+	metadata_table_clus_2barplot_ord_nodup <- metadata_table_clus_2barplot_ord[!duplicated(paste(metadata_table_clus_2barplot_ord$ID_patient, metadata_table_clus_2barplot_ord$Melting_Cluster)),]
 
 	metadata_table_clus_2barplot_ord_nodup <- droplevels(metadata_table_clus_2barplot_ord_nodup)
 
@@ -1281,7 +1433,16 @@ if (with_metadata == "y")
 
 
 
-	loc_barplot_day <- ggplot(metadata_table_clus_2barplot_ord_nodup, aes(x=Date, y=count, fill=HRM_Cluster)) + geom_bar(stat="identity", width = 0.5) + scale_x_date(labels = date_format("%d-%m-%Y"), breaks = date_breaks("2 day"), minor_breaks= "day") + scale_fill_manual(values=pal, labels=lab) + theme(axis.text.x = element_text(angle = 45, hjust = 1, size = date_barplot_size_day), axis.text.y = element_text(size = count_barplot_size), strip.background =element_rect(fill="gray90"), strip.text = element_text(colour = 'black')) + facet_wrap(~Location, nrow=num_location) + ggtitle("2c) Prevalence analysis: positivizations per location (daily)") + scale_y_continuous(breaks=seq(0,max_num_day,by=1), minor_breaks= NULL)
+	loc_barplot_day <- ggplot(metadata_table_clus_2barplot_ord_nodup, aes(x=Date, y=count, fill=Melting_Cluster)) + 
+		geom_bar(stat="identity", width = 0.5) + 
+		scale_x_date(labels = date_format("%d-%m-%Y"), breaks = date_breaks("2 day"), minor_breaks= "day") + 
+		scale_fill_manual(values=pal, labels=lab) + 
+		theme_minimal() + 
+		theme(axis.text.x = element_text(angle = 45, hjust = 1, size = date_barplot_size_day), 
+			axis.text.y = element_text(size = count_barplot_size), strip.background =element_rect(fill="gray90"), 
+			strip.text = element_text(colour = 'black')) + facet_wrap(~Location, nrow=num_location) + 
+		ggtitle("2c) Prevalence analysis: positivizations per location (daily)") + 
+		scale_y_continuous(breaks=seq(0,max_num_day,by=1), minor_breaks= NULL)
 
 
 	g <- ggplot_gtable(ggplot_build(loc_barplot_day))
@@ -1317,7 +1478,16 @@ if (with_metadata == "y")
 	txt <- paste("\r\n*plotting 2d) Positivizations location (monthly)*\r\n" , sep="")
 	write(txt, file=log_file, append=T)
 	
-	loc_barplot_month <- ggplot(metadata_table_clus_2barplot_ord_nodup, aes(x=month, y=count, fill=HRM_Cluster)) + geom_bar(stat="identity", width = 3) + scale_x_date(labels = date_format("%b-%Y"), breaks = date_breaks("month"), minor_breaks= NULL) + scale_fill_manual(values=pal, labels=lab) + theme(axis.text.x = element_text(angle = 45, hjust = 1, size = date_barplot_size_month), axis.text.y = element_text(size = count_barplot_size), strip.background =element_rect(fill="gray90"), strip.text = element_text(colour = 'black')) + facet_wrap(~Location, nrow=num_location) + ggtitle("2d) Prevalence analysis: positivizations per location (monthly)") + scale_y_continuous(breaks=seq(0,max_num_month,by=1), minor_breaks= NULL)
+	loc_barplot_month <- ggplot(metadata_table_clus_2barplot_ord_nodup, aes(x=month, y=count, fill=Melting_Cluster)) + 
+		geom_bar(stat="identity", width = 3) + 
+		scale_x_date(labels = date_format("%b-%Y"), breaks = date_breaks("month"), minor_breaks= NULL) + 
+		scale_fill_manual(values=pal, labels=lab) + 
+		theme_minimal() + 
+		theme(axis.text.x = element_text(angle = 45, hjust = 1, size = date_barplot_size_month), 
+			axis.text.y = element_text(size = count_barplot_size), 
+			strip.background =element_rect(fill="gray90"), strip.text = element_text(colour = 'black')) + 
+		facet_wrap(~Location, nrow=num_location) + ggtitle("2d) Prevalence analysis: positivizations per location (monthly)") + 
+		scale_y_continuous(breaks=seq(0,max_num_month,by=1), minor_breaks= NULL)
 
 	g <- ggplot_gtable(ggplot_build(loc_barplot_month ))
 	stript <- which(grepl('strip-t', g$layout$name))
@@ -1354,8 +1524,16 @@ if (with_metadata == "y")
 	write(txt, file=log_file, append=T)
 	
 	
-	global_barplot_day <- ggplot(metadata_table_clus_2barplot_ord_nodup, aes(x=Date, y=count, fill=HRM_Cluster)) + geom_bar(stat="identity", width = 0.5) + scale_x_date(labels = date_format("%d-%m-%Y"), breaks = date_breaks("2 day"), minor_breaks= "day") + scale_fill_manual(values=pal, labels=lab) + theme(axis.text.x = element_text(angle = 45, hjust = 1, size = date_barplot_size_day), axis.text.y = element_text(size = count_barplot_size), strip.background =element_rect(fill="gray90"), strip.text = element_text(colour = 'black')) +
-	 ggtitle("2e) Prevalence analysis: global positivizations (daily)") + scale_y_continuous(breaks=seq(0,max_num_day,by=1), minor_breaks= NULL)
+	global_barplot_day <- ggplot(metadata_table_clus_2barplot_ord_nodup, aes(x=Date, y=count, fill=Melting_Cluster)) + 
+		geom_bar(stat="identity", width = 0.5) + 
+		scale_x_date(labels = date_format("%d-%m-%Y"), breaks = date_breaks("2 day"), minor_breaks= "day") + 
+		scale_fill_manual(values=pal, labels=lab) + 
+		theme_minimal() + 
+		theme(axis.text.x = element_text(angle = 45, hjust = 1, size = date_barplot_size_day), 
+			axis.text.y = element_text(size = count_barplot_size), 
+			strip.text = element_text(colour = 'black')) +
+		 ggtitle("2e) Prevalence analysis: global positivizations (daily)") + 
+		 scale_y_continuous(breaks=seq(0,max_num_day,by=1), minor_breaks= NULL)
 
 	pdf(out_positivization_global_day_pdf,barplot_day_width, barplot_day_height)
 	print (global_barplot_day)
@@ -1380,7 +1558,16 @@ if (with_metadata == "y")
 	txt <- paste("\r\n*plotting 2f) Positivizations global (monthly)*\r\n" , sep="")
 	write(txt, file=log_file, append=T)
 	
-	global_barplot_month <- ggplot(metadata_table_clus_2barplot_ord_nodup, aes(x=month, y=count, fill=HRM_Cluster)) + geom_bar(stat="identity", width = 3) + scale_x_date(labels = date_format("%b-%Y"), breaks = date_breaks("month"), minor_breaks= NULL) + scale_fill_manual(values=pal, labels=lab) + theme(axis.text.x = element_text(angle = 45, hjust = 1, size = date_barplot_size_month), axis.text.y = element_text(size = count_barplot_size), strip.background =element_rect(fill="gray90"), strip.text = element_text(colour = 'black')) + ggtitle("2f) Prevalence analysis: global positivizations (monthly)") + scale_y_continuous(breaks=seq(0,max_num_month,by=1), minor_breaks= NULL)
+	global_barplot_month <- ggplot(metadata_table_clus_2barplot_ord_nodup, aes(x=month, y=count, fill=Melting_Cluster)) + 
+		geom_bar(stat="identity", width = 3) + 
+		scale_x_date(labels = date_format("%b-%Y"), breaks = date_breaks("month"), minor_breaks= NULL) + 
+		scale_fill_manual(values=pal, labels=lab) + 
+		theme_minimal() + 
+		theme(axis.text.x = element_text(angle = 45, hjust = 1, size = date_barplot_size_month), 
+			axis.text.y = element_text(size = count_barplot_size), 
+			strip.text = element_text(colour = 'black')) +
+		ggtitle("2f) Prevalence analysis: global positivizations (monthly)") + 
+		scale_y_continuous(breaks=seq(0,max_num_month,by=1), minor_breaks= NULL)
 
 	pdf(out_positivization_global_month_pdf,monthly_width,monthly_width)
 	print (global_barplot_month)
@@ -1388,26 +1575,96 @@ if (with_metadata == "y")
 
 	if (png_resolution>0)
 	{
-	png(out_positivization_global_month_png,monthly_width, monthly_width, units = 'in', res = png_resolution)
-	print (global_barplot_month)
-	dev.off()
+		png(out_positivization_global_month_png,monthly_width, monthly_width, units = 'in', res = png_resolution)
+		print(global_barplot_month)
+		dev.off()
 	}
 	txt <- paste("\r\nDONE\r\n" , sep="")
 	write(txt, file=log_file, append=T)
 	
 	}
 
-
-
-	txt <- paste("\r\n***Transmission analysis starts***\r\n" , sep="")
+	
+	#############################################################################
+	##############  PLOT 2g) Isolates by clusters (daily)  ##################
+	###############################################################################	
+	txt <- paste("\r\n*plotting 2g) Isolates by clusters (daily)*\r\n" , sep="")
+	write(txt, file=log_file, append=T)
+	
+	
+	
+	isolates_clusters_day<-ggplot(metadata_table_clus_2barplot, aes(x=Date, y=count, fill=Melting_Cluster)) + 
+		geom_bar(stat="identity", width = 0.5) +
+		scale_x_date(labels = date_format("%d-%m-%Y"), breaks = date_breaks("2 day"), minor_breaks= "day") + 
+		scale_fill_manual(values=pal, labels=lab) +
+		facet_wrap(~Melting_Cluster, nrow=tot_clus) +
+		theme_minimal() + 
+		scale_y_continuous(breaks=seq(0,max_num_day,by=1), minor_breaks= NULL) +
+		theme(axis.text.x = element_text(angle = 45, hjust = 1, size = date_barplot_size_day), 
+			axis.text.y = element_text(size = count_barplot_size), 
+			strip.text = element_text(colour = 'black')) +
+		ggtitle("2g) Prevalence analysis: Isolates by clusters (daily)")
+	
+	pdf(out_isolates_clusters_day_pdf,barplot_day_width,tot_clus*2)
+	print (isolates_clusters_day)
+	dev.off()
+	
+	if (png_resolution>0)
+	{
+		png(out_isolates_clusters_day_png,barplot_day_width, tot_clus*2, units = 'in', res = png_resolution)
+		print(isolates_clusters_day)
+		dev.off()
+	}
+		
+	txt <- paste("\r\nDONE\r\n" , sep="")
 	write(txt, file=log_file, append=T)
 
+	################################################################################
+	##############  PLOT 2h) Positivization by clusters (monthly) #################
+	################################################################################
+	if (plot_month_tag)
+	{
+	txt <- paste("\r\n*plotting 2h) Positivization by clusters (monthly)*\r\n" , sep="")
+	write(txt, file=log_file, append=T)
+		
+	isolates_clusters_month <- ggplot(metadata_table_clus_2barplot, aes(x=month, y=count, fill=Melting_Cluster)) + 
+		geom_bar(stat="identity", width = 3) +
+		scale_x_date(labels = date_format("%b-%Y"), breaks = date_breaks("month"), minor_breaks= NULL)+
+		scale_fill_manual(values=pal, labels=lab) + 
+		facet_wrap(~Melting_Cluster, nrow=tot_clus) +
+		theme_minimal() + 
+		theme(axis.text.x = element_text(angle = 45, hjust = 1, size = date_barplot_size_month), 
+			axis.text.y = element_text(size = count_barplot_size), 
+			strip.text = element_text(colour = 'black')) +
+		ggtitle("2h) Prevalence analysis: Positivization by clusters (monthly)") + 
+		scale_y_continuous(breaks=seq(0,max_num_month,by=1), minor_breaks= NULL)
+	
+	pdf(out_isolates_clusters_month_pdf,monthly_width,tot_clus*2)
+	print (isolates_clusters_month)
+	dev.off()
+	
+	if (png_resolution>0)
+	{
+		png(out_isolates_clusters_month_png,monthly_width, tot_clus*2, units = 'in', res = png_resolution)
+		print(isolates_clusters_month)
+		dev.off()
+	}	
+		
+	
+	
+	txt <- paste("\r\nDONE\r\n" , sep="")
+	write(txt, file=log_file, append=T)
+	
+	}
+		
+		
 	##############################################################
 	##############################################################
 	############# 3)  TRANSMISION ANALYSIS  ######################
 	##############################################################
 	##############################################################
-
+	txt <- paste("\r\n***Transmission analysis starts***\r\n" , sep="")
+	write(txt, file=log_file, append=T)
 	##############################################################
 	##############  PLOT 3a) patients timeline  ##################
 	##############################################################
@@ -1415,8 +1672,8 @@ if (with_metadata == "y")
 	write(txt, file=log_file, append=T)
 	
 	# set point size. bigger for positivized
-	point_size <- ifelse(metadata_table_clus_2barplot$ID_isolate %in% metadata_table_clus_2barplot_ord_nodup$ID_isolate & metadata_table_clus_2barplot$HRM_Cluster != nohrm_string, positivized_size, not_positivized_size)
-	point_alpha <- ifelse(metadata_table_clus_2barplot$ID_isolate %in% metadata_table_clus_2barplot_ord_nodup$ID_isolate & metadata_table_clus_2barplot$HRM_Cluster != nohrm_string, positivized_alpha, not_positivized_alpha)
+	point_size <- ifelse(metadata_table_clus_2barplot$ID_isolate %in% metadata_table_clus_2barplot_ord_nodup$ID_isolate & metadata_table_clus_2barplot$Melting_Cluster != nohrm_string, positivized_size, not_positivized_size)
+	point_alpha <- ifelse(metadata_table_clus_2barplot$ID_isolate %in% metadata_table_clus_2barplot_ord_nodup$ID_isolate & metadata_table_clus_2barplot$Melting_Cluster != nohrm_string, positivized_alpha, not_positivized_alpha)
 
 	metadata_table_clus_2barplot_with_point_size <- cbind.data.frame(metadata_table_clus_2barplot, point_size, point_alpha)
 
@@ -1426,15 +1683,18 @@ if (with_metadata == "y")
 	metadata_table_clus_2barplot_with_point_size$ID_patient = factor(metadata_table_clus_2barplot_with_point_size$ID_patient, levels = unique(metadata_table_clus_2barplot_with_point_size$ID_patient[order(metadata_table_clus_2barplot_with_point_size$Date)]))
 		
 	timeline <- ggplot(metadata_table_clus_2barplot_with_point_size, aes(Date, ID_patient))+
-  scale_x_datetime(date_breaks='day',date_labels = "%d-%m-%Y", minor_breaks= NULL)+
-  geom_point(data=metadata_table_clus_2barplot_with_point_size, aes(Date,ID_patient,color=HRM_Cluster,shape=Location),
-             alpha=point_alpha, position=position_jitter(w=0.03,h=0.04),
-             size=point_size,stroke = 1)+labs(color="HRM_Cluster", shape="Note: For each patient\nthe first isolate of each\nHRM cluster is bolder\r\n\r\n\r\n\r\nLocation")+
-  theme(axis.text.x=element_text(angle=45,hjust = 1, size = 7), legend.key = element_rect(fill = "white"))+ guides(color= guide_legend(override.aes = list(shape=15, size = 5)),shape = guide_legend(override.aes = list(size = 4)))+
-  scale_color_manual(values = pal,labels=lab)+
- scale_shape_manual(values=seq(1,25)) + ggtitle("3a) Transmission analysis: patients' timeline")
+		scale_x_datetime(date_breaks='day',date_labels = "%d-%m-%Y", minor_breaks= NULL)+
+ 		geom_point(data=metadata_table_clus_2barplot_with_point_size, aes(Date,ID_patient,color=Melting_Cluster,shape=Location),
+			alpha=point_alpha, position=position_jitter(w=0.03,h=0.04),
+			size=point_size,stroke = 1)+
+		labs(color="Melting_Cluster", shape="Note: For each patient\nthe first isolate of each\nHRM cluster is bolder\r\n\r\n\r\n\r\nLocation")+
+		theme_minimal() + 
+		theme(axis.text.x=element_text(angle=45,hjust = 1, size = 7), legend.key = element_rect(fill = "white"))+ 
+		guides(color= guide_legend(override.aes = list(shape=15, size = 5)),shape = guide_legend(override.aes = list(size = 4)))+
+		scale_color_manual(values = pal,labels=lab)+
+		scale_shape_manual(values=seq(1,25)) + 
+		ggtitle("3a) Timeline of the patients")
 
-#  scale_shape_discrete(solid=T) +
 	pdf(out_patients_timeline_pdf,barplot_day_width, barplot_day_height)
 	print (timeline, height = num_location)
 	dev.off()
@@ -1452,15 +1712,13 @@ if (with_metadata == "y")
 	##############################################################
 	##############  PLOT 3a) patients graph  #####################
 	##############################################################
-	txt <- paste("\r\n*plotting 3b) Patient-to-patient graph*\r\n" , sep="")
-	write(txt, file=log_file, append=T)
 
 	# connection on the basis of HRM
 
-# 	# get identified cluster only
-	metadata_table_clus_2barplot_nounk <- metadata_table_clus_2barplot[metadata_table_clus_2barplot$HRM_Cluster != nohrm_string,]
+ 	# get identified cluster only
+	metadata_table_clus_2barplot_nounk <- metadata_table_clus_2barplot[metadata_table_clus_2barplot$Melting_Cluster != nohrm_string,]
 
-	tograph <- merge(metadata_table_clus_2barplot_nounk, metadata_table_clus_2barplot_nounk, by="HRM_Cluster", all=T)
+	tograph <- merge(metadata_table_clus_2barplot_nounk, metadata_table_clus_2barplot_nounk, by="Melting_Cluster", all=T)
 	tograph$Date.x <- as.Date(tograph$Date.x)
 	tograph$Date.y <- as.Date(tograph$Date.y)
 	day_dist <- abs(as.numeric(tograph$Date.x)-as.numeric(tograph$Date.y))
@@ -1468,23 +1726,35 @@ if (with_metadata == "y")
 	tograph_ord <- tograph[order(tograph$day_dist),]
 	tograph_nodup <- tograph_ord[tograph_ord$ID_patient.x != tograph_ord$ID_patient.y, ]
 
-	e_color <- cluster_color[as.matrix(tograph_nodup$HRM_Cluster),1]
+	e_cluster <- tograph_nodup$Melting_Cluster 
+
+	e_color <- cluster_color[as.matrix(tograph_nodup$Melting_Cluster),1]
 	e_day_dist <- as.numeric(tograph_nodup$day_dist)
+
+	# alpha 0.1 for links < day_thr days apart
+	e_color = ifelse(e_day_dist < day_thr, adjustcolor(e_color,alpha.f = 1), adjustcolor(e_color,alpha.f = 0.2))
+	
 	e_loc_x <- as.matrix(tograph_nodup$Location.x)
 	e_loc_y <- as.matrix(tograph_nodup$Location.y)
 
-	gtab_tmp <- as.matrix(cbind.data.frame(t(apply(tograph_nodup[,c("ID_patient.x","ID_patient.y")],1,sort)), e_color, e_day_dist, e_loc_x, e_loc_y))
+	gtab_tmp <- as.matrix(cbind.data.frame(t(apply(tograph_nodup[,c("ID_patient.x","ID_patient.y")],1,sort)), e_cluster, e_color, e_day_dist, e_loc_x, e_loc_y))
 
 	# graph for HRM
 	gtab_hrm_tmp2 <- gtab_tmp[gtab_tmp[,1] != gtab_tmp[,2],]
-	gtab_hrm <- as.data.frame(gtab_hrm_tmp2[!duplicated(gtab_hrm_tmp2[,c(1,2,3)]),])
+
+	gtab_hrm_tmp3 <- as.data.frame(gtab_hrm_tmp2[!duplicated(gtab_hrm_tmp2[,c(1,2,3,4)]),])
+
+	# removes the links of undetermined nodes
+	gtab_hrm_tmp4 <- droplevels(gtab_hrm_tmp3[gtab_hrm_tmp3$e_cluster != und_string,])
+
+	gtab_hrm <- gtab_hrm_tmp4
 
 	#check if is possible to plot the patient graph:
 	#at least two edges are required!
 	if (length(colnames(gtab_hrm)) < 2)
 	{
 	
-	txt = "\r\nThere aren't enough possible transmissions to build the patient-to-patient graph\r\n"
+	txt = "\r\nThere aren't any patient-to-patient link. I cannot build the graph\r\n"
 	write(txt, file=log_file, append=T)
 
 	write(txt,file = "Analysis_INTERRUPTED.log")
@@ -1497,44 +1767,60 @@ if (with_metadata == "y")
 	quit()
 	}
 	
+
+	# Print the network table into a xls file
+	gtab_hrm_2write <- gtab_hrm
+	colnames(gtab_hrm_2write) <- c("Node1","Node2","Melting_Cluster","color_hexa","Day_dist","Location_node1","Location_node2")
+	write.xlsx(gtab_hrm_2write, file = out_graph_table_xls, row.names=F)
+
 	graph_hrm <- graph_from_data_frame(gtab_hrm, directed = F)
-	
+
 	graph_hrm_elist_tmp <- as_edgelist(graph_hrm, names = TRUE)
+
 	graph_hrm_elist <- paste(graph_hrm_elist_tmp[,1], graph_hrm_elist_tmp[,2], sep="_")
 
 	# graph for location and day
 	gtab_loc_tmp0 <- gtab_tmp[gtab_tmp[,1] != gtab_tmp[,2],]
 	gtab_loc_tmp1 <- gtab_loc_tmp0[gtab_loc_tmp0[,"e_loc_x"] == gtab_loc_tmp0[,"e_loc_y"],]
-	gtab_loc_tmp2 <- gtab_loc_tmp1[as.numeric(gtab_loc_tmp1[,"e_day_dist"]) <= day_thr,]
-	gtab_loc <- as.data.frame(gtab_loc_tmp2[!duplicated(gtab_loc_tmp2[,c(1,2,3)]),])
+
+	gtab_loc_tmp2 <- as.data.frame(gtab_loc_tmp1[as.numeric(gtab_loc_tmp1[,"e_day_dist"]) <= day_thr,])
+
+	gtab_loc <- gtab_loc_tmp2[!duplicated(gtab_loc_tmp2[,1:3]),]
 
 	graph_loc <- graph_from_data_frame(gtab_loc, directed = F)
 
 	graph_loc_elist_tmp <- as_edgelist(graph_loc, names = TRUE)
 	graph_loc_elist <- paste(graph_loc_elist_tmp[,1], graph_loc_elist_tmp[,2], sep="_")
 
-	
 	tra_graph_bolder_edges_size = length(V(graph_hrm))/5.75
+	
 	tra_graph_not_bolder_edges_size = tra_graph_bolder_edges_size/4
 	
-	
-	E(graph_hrm)$width <- ifelse(graph_hrm_elist %in% graph_loc_elist, tra_graph_bolder_edges_size, tra_graph_not_bolder_edges_size)
-
 	# patients table vs location, then ordering nodes as the graph
 
 	pat_loc <- as.matrix(table(metadata_table_clus_2barplot_nounk$ID_patient, metadata_table_clus_2barplot_nounk$Location))[as.matrix(V(graph_hrm)$name),]
 
-	# converts in list
-	pat_loc_list <- unname(split(pat_loc, 1:nrow(pat_loc)))
+	# converts in list 
+
+	if (num_location == 1)
+	{
+		pat_loc = as.matrix(pat_loc)
+		colnames(pat_loc)[1] = as.character(unique(metadata_table_clus_2barplot$Location))
+		pat_loc_list <- unname(split(pat_loc, 1))
+	}
+	else
+	{	
+		pat_loc_list <- unname(split(pat_loc, 1:nrow(pat_loc)))
+	}
 
 	V(graph_hrm)$pie.color <- list(loc_palette[1:ncol(pat_loc)])
 	
 	V(graph_hrm)$label.color = tra_graph_label_color
 	
 	tra_graph_weight = (347/14100)-(1/85500)*length(E(graph_hrm))
+	
 	E(graph_hrm)$weight <- rep(tra_graph_weight, length(E(graph_hrm)))
 	
-
 	lay <- layout.auto(graph_hrm)
 
 	subtitle = paste("Note: links of connections occurrend within ", day_thr, " days are bolder", sep="")
@@ -1542,42 +1828,47 @@ if (with_metadata == "y")
 	out_patient_graph_width = length(V(graph_hrm))*0.8
 	out_patient_graph_height = length(V(graph_hrm))*0.8
 
-
-
-
 	tra_graph_location_legend_size = out_patient_graph_width /9
 
 	tra_graph_hrm_legend_size = tra_graph_location_legend_size
 	
-	tra_graph_title_size=tra_graph_location_legend_size*1.5
+	tra_graph_title_size=tra_graph_location_legend_size*1
 	
-	#pie sizes
-	tra_graph_vertex_cex = 15
+	#pie sizes 
+	tra_graph_vertex_cex = tra_graph_vertex_size
 	
-	#pie labels sizes
+	#pie labels sizes	
 	V(graph_hrm)$label.cex = tra_graph_title_size*0.55
-	
-
-	
+		
 	margin_loc_legend = length(colnames(pat_loc))*2
 
 	metadata_table_clus_paz =  metadata_table_clus[metadata_table_clus$ID_patient %in% V(graph_hrm)$name,]
 
-	unique_clusters = unique(metadata_table_clus_paz$HRM_Cluster)
+	unique_clusters = unique(metadata_table_clus_paz$Melting_Cluster)
 
+	legend_text_tmp = cluster_color[unique_clusters,"cluster_text"]
+	legend_col_tmp = as.character(cluster_color[unique_clusters,"color_hexa"])
 
-	legend_text = cluster_color[unique_clusters,"cluster_text"]
+	# no undetermined in the legend
 
-	legend_col = as.character(cluster_color[unique_clusters,"color_hexa"])
+	legend_text <- legend_text_tmp[legend_text_tmp != und_string]
+	legend_col <- legend_col_tmp[legend_text_tmp != und_string]
+
+	txt <- paste("\r\n*plotting 3b) Patient-to-patient graph*\r\n" , sep="")
+	write(txt, file=log_file, append=T)
+
 
 	pdf(out_patients_graph_pdf, out_patient_graph_width, out_patient_graph_height)
 	par(mar = c(margin_loc_legend, 0,tra_graph_title_size*2, tra_graph_location_legend_size*10))
 	plot(graph_hrm, edge.color = E(graph_hrm)$e_color, vertex.shape="pie", vertex.pie=pat_loc_list, layout = lay, vertex.frame.color = NA, vertex.size = tra_graph_vertex_cex)
-	mtext(subtitle,adj=1, cex=tra_graph_title_size*0.75)
-	title(main = list("3b) Transmission analysis: patient-to-patient graph", cex = tra_graph_title_size), adj=1)
+	mtext(subtitle, adj=0, cex=tra_graph_title_size*0.75)
+	title(main = list("3b) Patient-to-patient graph", cex = tra_graph_title_size), adj=0)
 
-	add_legend("bottomleft", legend = colnames(pat_loc), pch=19 ,col = loc_palette[1:ncol(pat_loc)], ncol = 1, pt.cex=(1+tra_graph_location_legend_size), cex = tra_graph_location_legend_size, bty="n", title = "Location (nodes)")
-	add_legend("right", legend=legend_text, lty=1, lwd=5, ,col=legend_col ,pt.cex=(1+tra_graph_hrm_legend_size), cex=tra_graph_hrm_legend_size, ncol = 1, bty="n", title = "HRM_Cluster (links)")
+	# Number of columns for the localization legend
+	ncol_local = ceiling(ncol(pat_loc)/5)
+
+	add_legend("bottomleft", legend = colnames(pat_loc), pch=19 ,col = loc_palette[1:ncol(pat_loc)], ncol = ncol_local, pt.cex=(1+tra_graph_location_legend_size), cex = tra_graph_location_legend_size, bty="n", title = "Location (nodes)")
+	add_legend("right", legend=legend_text, lty=1, lwd=5, ,col=legend_col ,pt.cex=(1+tra_graph_hrm_legend_size), cex=tra_graph_hrm_legend_size, ncol = 1, bty="n", title = "Melting_Cluster (links)")
 	dev.off()
 
 	if (png_resolution>0)
@@ -1585,21 +1876,179 @@ if (with_metadata == "y")
 	png(out_patients_graph_png, out_patient_graph_width, out_patient_graph_height, units = 'in', res = png_resolution)
 		par(mar = c(margin_loc_legend, 0,tra_graph_title_size*2, tra_graph_location_legend_size*10))
 	plot(graph_hrm, edge.color = E(graph_hrm)$e_color, vertex.shape="pie", vertex.pie=pat_loc_list, layout = lay, vertex.frame.color = NA, vertex.size = tra_graph_vertex_cex)
-	mtext(subtitle,adj=1, cex=tra_graph_title_size*0.75)
-	title(main = list("3b) Transmission analysis: patient-to-patient graph", cex = tra_graph_title_size), adj=1)
+	mtext(subtitle, adj=0, cex=tra_graph_title_size*0.75)
+	title(main = list("3b) Patient-to-patient graph", cex = tra_graph_title_size), adj=0)
 
-	add_legend("bottomleft", legend = colnames(pat_loc), pch=19 ,col = loc_palette[1:ncol(pat_loc)], ncol = 1, pt.cex=(1+tra_graph_location_legend_size), cex = tra_graph_location_legend_size, bty="n", title = "Location (nodes)")
-	add_legend("right", legend=legend_text, lty=1, lwd=5, ,col=legend_col ,pt.cex=(1+tra_graph_hrm_legend_size), cex=tra_graph_hrm_legend_size, ncol = 1, bty="n", title = "HRM_Cluster (links)")
+	add_legend("bottomleft", legend = colnames(pat_loc), pch=19 ,col = loc_palette[1:ncol(pat_loc)], ncol = ncol_local, pt.cex=(1+tra_graph_location_legend_size), cex = tra_graph_location_legend_size, bty="n", title = "Location (nodes)")
+	add_legend("right", legend=legend_text, lty=1, lwd=5, ,col=legend_col ,pt.cex=(1+tra_graph_hrm_legend_size), cex=tra_graph_hrm_legend_size, ncol = 1, bty="n", title = "Melting_Cluster (links)")
 	dev.off()
 
 
 	}
 	txt <- paste("\r\nDONE\r\n" , sep="")
-	write(txt, file=log_file, append=T)
+	write(txt, file=log_file, append=T)	
+
+	########################
+	# keeps only links with dist_day < thr.
+	# if none is presente, the network in not built
+	
+	gtab_hrm <- droplevels(subset(gtab_hrm_tmp4, as.numeric(as.character(gtab_hrm_tmp4$e_day_dist)) < day_thr))
+
+	if(nrow(gtab_hrm) > 0)
+	{
+
+		#check if is possible to plot the patient graph:
+		#at least two edges are required!
+		if (length(colnames(gtab_hrm)) < 2)
+		{
+		
+		txt = "\r\nThere aren't any patient-to-patient link. I cannot build the graph\r\n"
+		write(txt, file=log_file, append=T)
+
+		write(txt,file = "Analysis_INTERRUPTED.log")
+
+		
+		current_time <- Sys.time()
+		txt <- paste("\r\n##### MeltingPlot analysis INTERRUPTED ( ", current_time," ) #####\n\n", sep="")
+		write(txt,file = log_file, append=T)
+		
+		quit()
+		}
+		
+		
+		txt <- paste("\r\n*plotting 3c) 7 days Patient-to-patient graph*\r\n" , sep="")
+		write(txt, file=log_file, append=T)
+		
+		graph_hrm <- graph_from_data_frame(gtab_hrm, directed = F)
+
+		graph_hrm_elist_tmp <- as_edgelist(graph_hrm, names = TRUE)
+
+		graph_hrm_elist <- paste(graph_hrm_elist_tmp[,1], graph_hrm_elist_tmp[,2], sep="_")
+
+		# graph for location and day
+		gtab_loc_tmp0 <- gtab_tmp[gtab_tmp[,1] != gtab_tmp[,2],]
+		gtab_loc_tmp1 <- gtab_loc_tmp0[gtab_loc_tmp0[,"e_loc_x"] == gtab_loc_tmp0[,"e_loc_y"],]
+
+		gtab_loc <- gtab_loc_tmp1[!duplicated(gtab_loc_tmp1[,1:3]),]
+
+		graph_loc <- graph_from_data_frame(gtab_loc, directed = F)
+
+		graph_loc_elist_tmp <- as_edgelist(graph_loc, names = TRUE)
+		graph_loc_elist <- paste(graph_loc_elist_tmp[,1], graph_loc_elist_tmp[,2], sep="_")
+
+		tra_graph_bolder_edges_size = length(V(graph_hrm))/5.75
+		
+		tra_graph_not_bolder_edges_size = tra_graph_bolder_edges_size/4
+		
+		# patients table vs location, then ordering nodes as the graph
+	 	
+		pat_loc <- as.matrix(table(metadata_table_clus_2barplot_nounk$ID_patient, metadata_table_clus_2barplot_nounk$Location))[as.matrix(V(graph_hrm)$name),]
+
+		pat_loc <- as.matrix(pat_loc)
+
+		num_location <- ncol(pat_loc)
+
+		if (num_location > 1){pat_loc <- pat_loc[,colSums(pat_loc)>0]}
+
+		num_location <- ncol(pat_loc)
+
+
+
+		if (num_location == 1)
+		{
+			pat_loc = as.matrix(pat_loc)
+			colnames(pat_loc)[1] = as.character(unique(metadata_table_clus_2barplot$Location))
+			pat_loc_list <- unname(split(pat_loc, 1))
+		}
+		else
+		{		
+			pat_loc_list <- unname(split(pat_loc, 1:nrow(pat_loc)))
+		}
+
+		V(graph_hrm)$pie.color <- list(loc_palette[1:ncol(pat_loc)])
+		
+		V(graph_hrm)$label.color = tra_graph_label_color
+		
+		tra_graph_weight = (347/14100)-(1/85500)*length(E(graph_hrm))
+		
+		E(graph_hrm)$weight <- rep(tra_graph_weight, length(E(graph_hrm)))
+		
+		lay <- layout.auto(graph_hrm)
+
+		out_patient_graph_width = length(V(graph_hrm))*0.8
+		out_patient_graph_height = length(V(graph_hrm))*0.8
+
+		tra_graph_location_legend_size = out_patient_graph_width /9
+
+		tra_graph_hrm_legend_size = tra_graph_location_legend_size
+		
+		tra_graph_title_size=tra_graph_location_legend_size*1.5
+		
+		#pie sizes 
+		tra_graph_vertex_cex = tra_graph_vertex_size
+		
+		#pie labels sizes 
+		V(graph_hrm)$label.cex = tra_graph_title_size*0.55
+				
+		margin_loc_legend = length(colnames(pat_loc))*2
+
+		metadata_table_clus_paz =  metadata_table_clus[metadata_table_clus$ID_patient %in% V(graph_hrm)$name,]
+
+		unique_clusters = unique(metadata_table_clus_paz$Melting_Cluster)
+
+		legend_text_tmp = cluster_color[unique_clusters,"cluster_text"]
+		legend_col_tmp = as.character(cluster_color[unique_clusters,"color_hexa"])
+
+		legend_text <- legend_text_tmp[legend_text_tmp != und_string]
+		legend_col <- legend_col_tmp[legend_text_tmp != und_string]
+		
+		subtitle2 <- paste("Note: only the links occured within ", day_thr, " days are shown", sep="")
+		
+		pdf(out_sel_patients_graph_pdf, out_patient_graph_width, out_patient_graph_height)
+		par(mar = c(margin_loc_legend, 0, tra_graph_title_size*2, tra_graph_location_legend_size*10))
+		plot(graph_hrm, edge.color = E(graph_hrm)$e_color, vertex.shape="pie", vertex.pie=pat_loc_list, layout = lay, vertex.frame.color = NA, vertex.size = tra_graph_vertex_cex)
+		mtext(subtitle2,adj=0, cex=tra_graph_title_size*0.75)
+		title(main = list("3c) 7 days patient-to-patient graph", cex = tra_graph_title_size*0.8), adj=0)
+
+		#Number of columns for the localization legend
+		ncol_local = ceiling(ncol(pat_loc)/5)
+
+		add_legend("bottomleft", legend = colnames(pat_loc), pch=19 ,col = loc_palette[1:ncol(pat_loc)], ncol = ncol_local, pt.cex=(1+tra_graph_location_legend_size), cex = tra_graph_location_legend_size, bty="n", title = "Location (nodes)")
+
+		add_legend("right", legend=legend_text, lty=1, lwd=5, ,col=legend_col ,pt.cex=(1+tra_graph_hrm_legend_size), cex=tra_graph_hrm_legend_size, ncol = 1, bty="n", title = "Melting_Cluster (links)")
+		dev.off()
+
+		if (png_resolution>0)
+		{
+		png(out_sel_patients_graph_png, out_patient_graph_width, out_patient_graph_height, units = 'in', res = png_resolution)
+			par(mar = c(margin_loc_legend, 0,tra_graph_title_size*2, tra_graph_location_legend_size*10))
+		plot(graph_hrm, edge.color = E(graph_hrm)$e_color, vertex.shape="pie", vertex.pie=pat_loc_list, layout = lay, vertex.frame.color = NA, vertex.size = tra_graph_vertex_cex)
+		mtext(subtitle2,adj=0, cex=tra_graph_title_size*0.75)
+		title(main = list("3c) 7 days patient-to-patient graph", cex = tra_graph_title_size*0.8), adj=0)
+
+		add_legend("bottomleft", legend = colnames(pat_loc), pch=19 ,col = loc_palette[1:ncol(pat_loc)], ncol = ncol_local, pt.cex=(1+tra_graph_location_legend_size), cex = tra_graph_location_legend_size, bty="n", title = "Location (nodes)")
+		add_legend("right", legend=legend_text, lty=1, lwd=5, ,col=legend_col ,pt.cex=(1+tra_graph_hrm_legend_size), cex=tra_graph_hrm_legend_size, ncol = 1, bty="n", title = "Melting_Cluster (links)")
+		dev.off()
+
+
+		}
+		txt <- paste("\r\nDONE\r\n" , sep="")
+		write(txt, file=log_file, append=T)
+
+	}else{
+
+		txt = "\r\nThere aren't any patient-to-patient link. I cannot build the graph\r\n"
+		write(txt, file=log_file, append=T)
+
+		write(txt,file = "Analysis_INTERRUPTED.log")
+
+	}
+
+
+
 }
 
 current_time <- Sys.time()
 txt <- paste("\r\n##### MeltingPlot analysis END ( ", current_time," ) #####\n\n", sep="")
 write(txt,file = log_file, append=T)
-
 
