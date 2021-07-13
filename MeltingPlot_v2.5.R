@@ -125,8 +125,6 @@ day_thr = as.numeric(args_df[1,"-day_thr"])
 btw_thr = as.numeric(args_df[1,"-btw_thr"])
 clus_thr = as.numeric(args_df[1,"-clus_thr"])
 
-print(args_df)
-print(clus_thr)
 ##############################################################
 ##################   FUNCTIONS  ##############################
 ##############################################################
